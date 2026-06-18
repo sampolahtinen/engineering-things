@@ -195,3 +195,26 @@
   border-radius: 999px;
   vertical-align: -1px;
 }
+
+.dt-inspector-card__color {
+  display: grid;
+  gap: 3px;
+}
+
+.dt-inspector-card__color-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dt-inspector-card__color-token {
+  color: #475569;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 11px;
+}
+
+.dt-inspector-card__color-token--missing {
+  color: #b45309;
+}

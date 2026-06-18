@@ -15,6 +15,7 @@
   let measurementLayer = null;
   let gapLayer = null;
   let layers = null;
+  let colorCanvasContext = null;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "design-tools:get-state") {
@@ -451,9 +452,9 @@
         ["Letter spacing", style.letterSpacing],
       ]),
       section("Colors", [
-        ["Text", swatch(style.color)],
-        ["Background", swatch(style.backgroundColor)],
-        ["Border", swatch(style.borderColor)],
+        ["Text", colorValue(element, style.color, ["color"], true)],
+        ["Background", colorValue(element, style.backgroundColor, ["background-color", "background"], false)],
+        ["Border", colorValue(element, style.borderTopColor, ["border-color", "border-top-color", "border"], false)],
       ]),
       section("Parent Layout", [
         ["Parent", element.parentElement ? selectorFor(element.parentElement) : "None"],
@@ -522,12 +523,247 @@
   }
 
   function swatch(value) {
-    const wrapper = document.createElement("span");
     const dot = document.createElement("span");
     dot.className = "dt-inspector-card__swatch";
     dot.style.background = value;
-    wrapper.append(dot, document.createTextNode(value));
+    return dot;
+  }
+
+  function colorValue(element, computedValue, propertyNames, inherited) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "dt-inspector-card__color";
+
+    const valueRow = document.createElement("div");
+    valueRow.className = "dt-inspector-card__color-value";
+
+    const hex = colorToHex(computedValue);
+    valueRow.append(swatch(computedValue), document.createTextNode(hex));
+
+    const token = colorTokenFor(element, propertyNames, inherited);
+    const tokenRow = document.createElement("div");
+    tokenRow.className = "dt-inspector-card__color-token";
+    tokenRow.textContent = token || "No token";
+
+    if (!token) {
+      tokenRow.classList.add("dt-inspector-card__color-token--missing");
+    }
+
+    wrapper.append(valueRow, tokenRow);
     return wrapper;
+  }
+
+  function colorTokenFor(element, propertyNames, inherited) {
+    let candidate = element;
+
+    while (candidate instanceof Element) {
+      const declaration = bestColorDeclaration(candidate, propertyNames);
+
+      if (declaration) {
+        const token = tokenFromCssValue(declaration.value);
+
+        if (token) {
+          return token;
+        }
+
+        if (declaration.value.trim() !== "inherit") {
+          return null;
+        }
+      }
+
+      if (!inherited) {
+        return null;
+      }
+
+      candidate = candidate.parentElement;
+    }
+
+    return null;
+  }
+
+  function bestColorDeclaration(element, propertyNames) {
+    let best = null;
+    let order = 0;
+
+    for (const propertyName of propertyNames) {
+      const value = element.style.getPropertyValue(propertyName);
+
+      if (value) {
+        best = betterDeclaration(best, {
+          value,
+          important: element.style.getPropertyPriority(propertyName) === "important",
+          inline: true,
+          specificity: Number.MAX_SAFE_INTEGER,
+          order: Number.MAX_SAFE_INTEGER,
+        });
+      }
+    }
+
+    for (const rule of styleRulesFor(document.styleSheets)) {
+      const specificity = matchingSpecificity(element, rule.selectorText);
+
+      if (specificity === null) {
+        order += 1;
+        continue;
+      }
+
+      for (const propertyName of propertyNames) {
+        const value = rule.style.getPropertyValue(propertyName);
+
+        if (value) {
+          best = betterDeclaration(best, {
+            value,
+            important: rule.style.getPropertyPriority(propertyName) === "important",
+            inline: false,
+            specificity,
+            order,
+          });
+        }
+      }
+
+      order += 1;
+    }
+
+    return best;
+  }
+
+  function betterDeclaration(current, next) {
+    if (!current) {
+      return next;
+    }
+
+    if (next.important !== current.important) {
+      return next.important ? next : current;
+    }
+
+    if (next.inline !== current.inline) {
+      return next.inline ? next : current;
+    }
+
+    if (next.specificity !== current.specificity) {
+      return next.specificity > current.specificity ? next : current;
+    }
+
+    return next.order >= current.order ? next : current;
+  }
+
+  function styleRulesFor(styleSheets) {
+    const rules = [];
+
+    for (const styleSheet of styleSheets) {
+      appendStyleRules(rules, styleSheet);
+    }
+
+    return rules;
+  }
+
+  function appendStyleRules(rules, styleSheetOrRule) {
+    let cssRules;
+
+    try {
+      cssRules = styleSheetOrRule.cssRules;
+    } catch (_error) {
+      return;
+    }
+
+    if (!cssRules) {
+      return;
+    }
+
+    for (const rule of cssRules) {
+      if (rule.type === CSSRule.STYLE_RULE) {
+        rules.push(rule);
+        continue;
+      }
+
+      appendStyleRules(rules, rule);
+    }
+  }
+
+  function matchingSpecificity(element, selectorText) {
+    let best = null;
+
+    for (const selector of selectorText.split(",")) {
+      const trimmedSelector = selector.trim();
+
+      try {
+        if (trimmedSelector && element.matches(trimmedSelector)) {
+          const specificity = selectorSpecificity(trimmedSelector);
+          best = best === null ? specificity : Math.max(best, specificity);
+        }
+      } catch (_error) {
+        continue;
+      }
+    }
+
+    return best;
+  }
+
+  function selectorSpecificity(selector) {
+    const withoutStrings = selector.replace(/(['"]).*?\1/g, "");
+    const ids = (withoutStrings.match(/#[\w-]+/g) || []).length;
+    const classes = (withoutStrings.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+(?:\([^)]*\))?/g) || []).length;
+    const elements = (withoutStrings.replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|:{1,2}[\w-]+(?:\([^)]*\))?/g, " ").match(/\b[a-zA-Z][\w-]*\b/g) || []).length;
+    return ids * 10000 + classes * 100 + elements;
+  }
+
+  function tokenFromCssValue(value) {
+    return value.match(/var\(\s*(--[\w-]+)/)?.[1] || null;
+  }
+
+  function colorToHex(value) {
+    const parsed = rgbToHex(value);
+
+    if (parsed) {
+      return parsed;
+    }
+
+    try {
+      colorCanvasContext ||= document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+      colorCanvasContext.canvas.width = 1;
+      colorCanvasContext.canvas.height = 1;
+      colorCanvasContext.clearRect(0, 0, 1, 1);
+      colorCanvasContext.fillStyle = value;
+      colorCanvasContext.fillRect(0, 0, 1, 1);
+
+      const [red, green, blue, alpha] = colorCanvasContext.getImageData(0, 0, 1, 1).data;
+      return rgbaToHex(red, green, blue, alpha / 255);
+    } catch (_error) {
+      return value;
+    }
+  }
+
+  function rgbToHex(value) {
+    const match = value.match(/^rgba?\((.+)\)$/i);
+
+    if (!match) {
+      return null;
+    }
+
+    const parts = match[1].includes(",")
+      ? match[1].split(",").map((part) => part.trim())
+      : match[1].split(/\s+\/\s+|\s+/).filter(Boolean);
+
+    const red = Number.parseFloat(parts[0]);
+    const green = Number.parseFloat(parts[1]);
+    const blue = Number.parseFloat(parts[2]);
+    const alpha = parts[3] === undefined ? 1 : Number.parseFloat(parts[3]);
+
+    if (![red, green, blue, alpha].every(Number.isFinite)) {
+      return null;
+    }
+
+    return rgbaToHex(red, green, blue, alpha);
+  }
+
+  function rgbaToHex(red, green, blue, alpha) {
+    const channels = [red, green, blue].map((channel) => clamp(Math.round(channel), 0, 255));
+    const hex = channels.map((channel) => channel.toString(16).padStart(2, "0")).join("");
+
+    if (alpha >= 1) {
+      return `#${hex}`;
+    }
+
+    return `#${hex}${clamp(Math.round(alpha * 255), 0, 255).toString(16).padStart(2, "0")}`;
   }
 
   function positionCard() {
