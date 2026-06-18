@@ -102,6 +102,7 @@
   width: min(380px, calc(100vw - 16px));
   max-height: min(520px, calc(100vh - 16px));
   overflow: auto;
+  overscroll-behavior: contain;
   pointer-events: none;
   border: 1px solid rgba(203, 213, 225, 0.9);
   border-radius: 8px;
@@ -114,6 +115,10 @@
   font-size: 12px;
   line-height: 1.45;
   backdrop-filter: blur(10px);
+}
+
+.dt-inspector-card--pinned {
+  pointer-events: auto;
 }
 
 .dt-inspector-card__header {

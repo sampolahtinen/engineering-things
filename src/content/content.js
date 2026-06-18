@@ -16,6 +16,9 @@
   let gapLayer = null;
   let layers = null;
   let colorCanvasContext = null;
+  let colorTokenCache = new WeakMap();
+  let styleRuleCache = null;
+  let inspectionFrame = null;
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "design-tools:get-state") {
@@ -37,6 +40,8 @@
     active = nextActive;
 
     if (active) {
+      colorTokenCache = new WeakMap();
+      styleRuleCache = null;
       mount();
       document.addEventListener("mousemove", handleMouseMove, true);
       document.addEventListener("mouseleave", handleFrameExit, true);
@@ -49,6 +54,7 @@
       return;
     }
 
+    cancelPendingInspection();
     document.removeEventListener("mousemove", handleMouseMove, true);
     document.removeEventListener("mouseleave", handleFrameExit, true);
     document.removeEventListener("mouseout", handleMouseOut, true);
@@ -60,6 +66,8 @@
     unmount();
     pinned = false;
     currentElement = null;
+    colorTokenCache = new WeakMap();
+    styleRuleCache = null;
   }
 
   function mount() {
@@ -108,7 +116,17 @@
       return;
     }
 
-    inspectPoint(event.clientX, event.clientY);
+    pointerX = event.clientX;
+    pointerY = event.clientY;
+
+    if (inspectionFrame !== null) {
+      return;
+    }
+
+    inspectionFrame = requestAnimationFrame(() => {
+      inspectionFrame = null;
+      inspectElement(document.elementFromPoint(pointerX, pointerY));
+    });
   }
 
   function handleMouseOut(event) {
@@ -122,21 +140,27 @@
       return;
     }
 
+    cancelPendingInspection();
     hideInspection();
   }
 
   function handleClick(event) {
-    if (!currentElement) {
+    if (!currentElement || root?.contains(event.target)) {
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
     pinned = !pinned;
+    card?.classList.toggle("dt-inspector-card--pinned", pinned);
     renderPanel(currentElement);
   }
 
-  function handleViewportChange() {
+  function handleViewportChange(event) {
+    if (event?.target && root?.contains(event.target)) {
+      return;
+    }
+
     if (currentElement) {
       renderInspection(currentElement);
     }
@@ -163,8 +187,22 @@
       root.hidden = false;
     }
 
+    if (currentElement === element) {
+      positionCard();
+      return;
+    }
+
     currentElement = element;
     renderInspection(element);
+  }
+
+  function cancelPendingInspection() {
+    if (inspectionFrame === null) {
+      return;
+    }
+
+    cancelAnimationFrame(inspectionFrame);
+    inspectionFrame = null;
   }
 
   function hideInspection() {
@@ -553,6 +591,13 @@
   }
 
   function colorTokenFor(element, propertyNames, inherited) {
+    const cacheKey = `${propertyNames.join("|")}:${inherited}`;
+    const cachedTokens = colorTokenCache.get(element);
+
+    if (cachedTokens?.has(cacheKey)) {
+      return cachedTokens.get(cacheKey);
+    }
+
     let candidate = element;
 
     while (candidate instanceof Element) {
@@ -562,22 +607,37 @@
         const token = tokenFromCssValue(declaration.value);
 
         if (token) {
+          cacheColorToken(element, cacheKey, token);
           return token;
         }
 
         if (declaration.value.trim() !== "inherit") {
+          cacheColorToken(element, cacheKey, null);
           return null;
         }
       }
 
       if (!inherited) {
+        cacheColorToken(element, cacheKey, null);
         return null;
       }
 
       candidate = candidate.parentElement;
     }
 
+    cacheColorToken(element, cacheKey, null);
     return null;
+  }
+
+  function cacheColorToken(element, cacheKey, token) {
+    let cachedTokens = colorTokenCache.get(element);
+
+    if (!cachedTokens) {
+      cachedTokens = new Map();
+      colorTokenCache.set(element, cachedTokens);
+    }
+
+    cachedTokens.set(cacheKey, token);
   }
 
   function bestColorDeclaration(element, propertyNames) {
@@ -647,12 +707,17 @@
   }
 
   function styleRulesFor(styleSheets) {
+    if (styleRuleCache) {
+      return styleRuleCache;
+    }
+
     const rules = [];
 
     for (const styleSheet of styleSheets) {
       appendStyleRules(rules, styleSheet);
     }
 
+    styleRuleCache = rules;
     return rules;
   }
 
