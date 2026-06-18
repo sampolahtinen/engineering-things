@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Design Tools</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <div class="eyebrow">Inspector</div>
+      <h1>Design Tools</h1>
+      <p class="description">Inspect fonts, colors, spacing, and layout details on the current page.</p>
+
+      <button id="toggle" class="toggle" type="button" aria-pressed="false">
+        <span class="toggle__label">Enable inspector</span>
+        <span class="toggle__switch" aria-hidden="true"></span>
+      </button>
+
+      <p id="status" class="status">Checking the current tab...</p>
+
+      <div class="shortcuts" aria-label="Shortcuts">
+        <div><kbd>Hover</kbd> highlight an element</div>
+        <div><kbd>Click</kbd> pin or unpin details</div>
+        <div><kbd>Esc</kbd> turn inspector off</div>
+      </div>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
