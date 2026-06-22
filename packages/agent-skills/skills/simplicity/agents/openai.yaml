@@ -1,0 +1,7 @@
+interface:
+  display_name: "Simplicity"
+  short_description: "Small direct changes, no needless indirection"
+  default_prompt: "Use $simplicity to keep this code change direct and behavior-preserving."
+
+policy:
+  allow_implicit_invocation: true

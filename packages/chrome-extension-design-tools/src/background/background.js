@@ -9,13 +9,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     return;
   }
 
-  const state = await sendMessage(tab.id, { type: "design-tools:get-state" });
-
-  if (!state) {
-    return;
-  }
-
-  await sendMessage(tab.id, { type: "design-tools:set-active", active: !state.active });
+  await sendMessage(tab.id, { type: "design-tools:toggle-active" });
 });
 
 async function sendMessage(tabId, message) {

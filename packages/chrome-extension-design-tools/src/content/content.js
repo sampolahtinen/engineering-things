@@ -19,6 +19,9 @@
   let colorTokenCache = new WeakMap();
   let styleRuleCache = null;
   let inspectionFrame = null;
+  let lastShortcutToggleAt = 0;
+
+  document.addEventListener("keydown", handleKeyDown, true);
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "design-tools:get-state") {
@@ -28,6 +31,12 @@
 
     if (message?.type === "design-tools:set-active") {
       setActive(Boolean(message.active));
+      sendResponse({ active });
+      return;
+    }
+
+    if (message?.type === "design-tools:toggle-active") {
+      toggleActiveFromShortcut();
       sendResponse({ active });
     }
   });
@@ -50,7 +59,6 @@
       document.addEventListener("scroll", handleViewportChange, true);
       window.addEventListener("blur", handleFrameExit);
       window.addEventListener("resize", handleViewportChange);
-      window.addEventListener("keydown", handleKeyDown, true);
       return;
     }
 
@@ -62,7 +70,6 @@
     document.removeEventListener("scroll", handleViewportChange, true);
     window.removeEventListener("blur", handleFrameExit);
     window.removeEventListener("resize", handleViewportChange);
-    window.removeEventListener("keydown", handleKeyDown, true);
     unmount();
     pinned = false;
     currentElement = null;
@@ -145,7 +152,12 @@
   }
 
   function handleClick(event) {
-    if (!currentElement || root?.contains(event.target)) {
+    if (root?.contains(event.target)) {
+      event.stopPropagation();
+      return;
+    }
+
+    if (!currentElement) {
       return;
     }
 
@@ -167,9 +179,45 @@
   }
 
   function handleKeyDown(event) {
+    if (isToggleShortcut(event)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      toggleActiveFromShortcut();
+      return;
+    }
+
+    if (!active) {
+      return;
+    }
+
+    if (root?.contains(event.target)) {
+      event.stopPropagation();
+
+      if (event.key === "Escape") {
+        setActive(false);
+      }
+
+      return;
+    }
+
     if (event.key === "Escape") {
       setActive(false);
     }
+  }
+
+  function isToggleShortcut(event) {
+    return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.code === "KeyD";
+  }
+
+  function toggleActiveFromShortcut() {
+    const now = performance.now();
+
+    if (now - lastShortcutToggleAt < 250) {
+      return;
+    }
+
+    lastShortcutToggleAt = now;
+    setActive(!active);
   }
 
   function inspectPoint(x, y) {
@@ -468,8 +516,15 @@
     const parentStyle = element.parentElement ? window.getComputedStyle(element.parentElement) : null;
 
     card.replaceChildren();
-    card.append(
+    const sections = [
       header(element),
+    ];
+
+    if (pinned) {
+      sections.push(inlineStyleEditor(element));
+    }
+
+    sections.push(
       section("Box", [
         ["Size", `${formatNumber(rect.width)} x ${formatNumber(rect.height)}`],
         ["Display", style.display],
@@ -482,17 +537,17 @@
         ["Border", edgeSummary(style, "border", "Width")],
         ["Gap", `${style.rowGap} row / ${style.columnGap} column`],
       ]),
+      section("Colors", [
+        ["Text", colorValue(element, style.color, ["color"], true)],
+        ["Background", colorValue(element, style.backgroundColor, ["background-color", "background"], false)],
+        ["Border", colorValue(element, style.borderTopColor, ["border-color", "border-top-color", "border"], false)],
+      ]),
       section("Typography", [
         ["Family", style.fontFamily],
         ["Size", style.fontSize],
         ["Weight", style.fontWeight],
         ["Line height", style.lineHeight],
         ["Letter spacing", style.letterSpacing],
-      ]),
-      section("Colors", [
-        ["Text", colorValue(element, style.color, ["color"], true)],
-        ["Background", colorValue(element, style.backgroundColor, ["background-color", "background"], false)],
-        ["Border", colorValue(element, style.borderTopColor, ["border-color", "border-top-color", "border"], false)],
       ]),
       section("Parent Layout", [
         ["Parent", element.parentElement ? selectorFor(element.parentElement) : "None"],
@@ -502,7 +557,132 @@
       ]),
     );
 
+    card.append(...sections);
+
     positionCard();
+  }
+
+  function inlineStyleEditor(element) {
+    const editor = document.createElement("div");
+    editor.className = "dt-inspector-editor";
+
+    const styleNames = Array.from(element.style);
+
+    if (styleNames.length > 0) {
+      const list = document.createElement("div");
+      list.className = "dt-inspector-editor__list";
+
+      for (const propertyName of styleNames) {
+        list.append(inlineStyleRow(element, propertyName));
+      }
+
+      editor.append(list);
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "dt-inspector-editor__empty";
+      empty.textContent = "No inline styles yet.";
+      editor.append(empty);
+    }
+
+    editor.append(inlineStyleForm(element));
+    return section("Inline Styles", [["element.style", editor]]);
+  }
+
+  function inlineStyleRow(element, propertyName) {
+    const row = document.createElement("div");
+    row.className = "dt-inspector-editor__style";
+
+    const declaration = document.createElement("div");
+    declaration.className = "dt-inspector-editor__declaration";
+    declaration.textContent = `${propertyName}: ${element.style.getPropertyValue(propertyName)};`;
+
+    const remove = document.createElement("button");
+    remove.className = "dt-inspector-editor__remove";
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      element.style.removeProperty(propertyName);
+      refreshEditedElement(element);
+    });
+
+    row.append(declaration, remove);
+    return row;
+  }
+
+  function inlineStyleForm(element) {
+    const form = document.createElement("form");
+    form.className = "dt-inspector-editor__form";
+
+    const propertyInput = document.createElement("input");
+    propertyInput.className = "dt-inspector-editor__input";
+    propertyInput.name = "property";
+    propertyInput.placeholder = "background";
+    propertyInput.autocomplete = "off";
+
+    const valueInput = document.createElement("input");
+    valueInput.className = "dt-inspector-editor__input";
+    valueInput.name = "value";
+    valueInput.placeholder = "#f4f5f7";
+    valueInput.autocomplete = "off";
+
+    const apply = document.createElement("button");
+    apply.className = "dt-inspector-editor__apply";
+    apply.type = "submit";
+    apply.textContent = "Apply";
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const propertyName = normalizeCssPropertyName(propertyInput.value);
+      const propertyValue = valueInput.value.trim();
+
+      if (!propertyName) {
+        return;
+      }
+
+      if (propertyValue) {
+        const { value, priority } = cssValueAndPriority(propertyValue);
+        element.style.setProperty(propertyName, value, priority);
+      } else {
+        element.style.removeProperty(propertyName);
+      }
+
+      propertyInput.value = "";
+      valueInput.value = "";
+      refreshEditedElement(element);
+    });
+
+    form.append(propertyInput, valueInput, apply);
+    return form;
+  }
+
+  function normalizeCssPropertyName(value) {
+    const propertyName = value.trim();
+
+    if (!propertyName || propertyName.startsWith("--")) {
+      return propertyName;
+    }
+
+    return propertyName.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+  }
+
+  function cssValueAndPriority(value) {
+    const importantMatch = value.match(/^(.*)!important\s*$/i);
+
+    if (!importantMatch) {
+      return { value, priority: "" };
+    }
+
+    return { value: importantMatch[1].trim(), priority: "important" };
+  }
+
+  function refreshEditedElement(element) {
+    colorTokenCache.delete(element);
+    currentElement = element;
+    renderInspection(element);
   }
 
   function header(element) {

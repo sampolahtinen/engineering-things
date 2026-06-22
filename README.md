@@ -1,26 +1,12 @@
-# Chrome Extension Design Tools
+# Engineering Things
 
-A local Chrome/Brave extension for inspecting visual design details directly on any web page.
+Monorepo for small engineering tools and agent assets.
 
-## Current MVP
+## Packages
 
-- Toggle the inspector from the extension popup.
-- Hover elements to highlight their box model.
-- View typography, colors, dimensions, margins, padding, borders, and layout gaps.
-- Click an element to pin the current inspection.
-- Press `Esc` to turn the inspector off.
-- Press `Alt+Shift+D` to toggle the inspector on the current tab.
+- `packages/chrome-extension-design-tools`: Chrome/Brave design inspector extension.
+- `packages/agent-skills`: source-controlled copies of selected agent skills.
 
-## Load Locally
+## Chrome Extension
 
-1. Open `chrome://extensions` or `brave://extensions`.
-2. Enable `Developer mode`.
-3. Click `Load unpacked`.
-4. Select this project folder.
-5. Open a normal web page and use the extension popup to enable the inspector.
-
-Chrome blocks extensions on internal pages such as `chrome://extensions` and the Chrome Web Store.
-
-After changing extension files, click the reload button on this extension in `chrome://extensions`, then reload the inspected page.
-
-You can change the keyboard shortcut at `chrome://extensions/shortcuts` or `brave://extensions/shortcuts`.
+Load the unpacked extension from `packages/chrome-extension-design-tools`.
