@@ -1,0 +1,9 @@
+{
+  "name": "@opencode-telegram/cloud-bridge",
+  "type": "module",
+  "dependencies": {
+    "@opencode-ai/sdk": "latest",
+    "@opencode-telegram/core": "workspace:*",
+    "@prisma/compute": "latest"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@opencode-telegram/core",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./format": "./format.ts",
+    "./telegram": "./telegram.ts",
+    "./types": "./types.ts"
+  }
+}
