@@ -1,0 +1,1 @@
++ scope tangent worth pursuing later: `~/.zshrc` contains live-looking service tokens directly in the shell config. Consider moving those values to `~/.zshrc.secrets` and rotating anything that may have been exposed.

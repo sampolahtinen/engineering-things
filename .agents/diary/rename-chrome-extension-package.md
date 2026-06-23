@@ -1,0 +1,1 @@
+out-of-scope decision: The repo already had an uncommitted monorepo restructure before this task: tracked root extension files show as deleted and `package.json`/`packages/*` are untracked. I left that state intact and only updated the package rename within the current filesystem layout.
